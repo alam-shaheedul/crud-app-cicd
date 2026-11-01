@@ -1,0 +1,47 @@
+name: CRUD App CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  detect-changes:
+    runs-on: self-hosted
+    outputs:
+      deploy_all: ${{ steps.detect.outputs.DEPLOY_ALL }}
+      services: ${{ steps.detect.outputs.SERVICES }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed services
+        id: detect
+        run: bash .github/scripts/detect-changes.sh
+
+  deploy:
+    needs: detect-changes
+    runs-on: self-hosted
+    if: github.event_name == 'push' && (needs.detect-changes.outputs.deploy_all == 'true' || needs.detect-changes.outputs.services != '')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare deployment directory
+        run: |
+          if [ ! -d /opt/crud-app/.git ]; then
+            git clone https://github.com/${{ github.repository }}.git /opt/crud-app
+          fi
+
+      - name: Deploy all services
+        if: needs.detect-changes.outputs.deploy_all == 'true'
+        run: bash .github/scripts/deploy.sh all
+
+      - name: Deploy changed services
+        if: needs.detect-changes.outputs.deploy_all != 'true' && needs.detect-changes.outputs.services != ''
+        run: bash .github/scripts/deploy.sh "${{ needs.detect-changes.outputs.services }}"
